@@ -49,6 +49,29 @@ let
         seccompPermissions = [ ]; # See add-seccomp combinator
         inherit initialState; # See reset combinator
       };
+      mkDesktopEntries =
+        wrapper:
+        pkgs.runCommand "${name}-desktop-entries" { } ''
+          mkdir -p $out/share
+
+          if [ -d ${exe}/share/applications ]; then
+            mkdir -p $out/share/applications
+            for f in ${exe}/share/applications/*.desktop; do
+              dest=$out/share/applications/$(basename "$f")
+              cp "$f" "$dest"
+              chmod +w "$dest"
+
+              sed -i -E "s|^Exec=[^ ]+|Exec=${wrapper}/bin/${name}|" "$dest"
+              sed -i -e '/^TryExec=/d' -e '/^DBusActivatable=true/d' "$dest"
+            done
+          fi
+
+          for d in icons pixmaps; do
+            if [ -d ${exe}/share/$d ]; then
+              ln -s ${exe}/share/$d $out/share/$d
+            fi
+          done
+        '';
     in
     lib.pipe initialState (
       # Permissions shared by all invocations of jail
@@ -112,6 +135,21 @@ let
           pkgs.writeShellApplication {
             inherit name text;
             runtimeInputs = [ pkgs.coreutils ];
+          }
+        )
+
+        # make desktop entry
+        (
+          wrapper:
+          pkgs.symlinkJoin {
+            inherit name;
+            paths = [
+              wrapper
+              (mkDesktopEntries wrapper)
+            ];
+            meta = (wrapper.meta or { }) // {
+              mainProgram = name;
+            };
           }
         )
 
